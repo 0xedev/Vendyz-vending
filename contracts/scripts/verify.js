@@ -25,8 +25,7 @@ async function main() {
       address: contracts.RandomnessProvider,
       constructorArguments: [
         config.vrfCoordinator,
-        config.subscriptionId,
-        process.env.CHAINLINK_KEY_HASH,
+        config.keyHash,
       ],
     });
     console.log("✅ RandomnessProvider verified");

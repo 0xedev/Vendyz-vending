@@ -24,22 +24,20 @@ npm run verify:sepolia
 Create a `.env` file in the contracts directory:
 
 ```bash
+### Environment Variables
+
+```bash
 # Blockchain
 PRIVATE_KEY=your_deployer_private_key
 ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/YOUR_KEY
-SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
+CHAINLINK_VRF_COORDINATOR=0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B
+CHAINLINK_KEY_HASH=0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae
+INITIAL_VRF_FUNDING=0.5  # ETH to fund RandomnessProvider
 
-# Chainlink VRF (Sepolia)
-CHAINLINK_VRF_COORDINATOR=0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625
-CHAINLINK_SUBSCRIPTION_ID=your_subscription_id
-CHAINLINK_KEY_HASH=0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c
-
-# Contract Addresses
-USDC_ADDRESS=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
-TREASURY_ADDRESS=your_treasury_address
-
-# Etherscan
-ETHERSCAN_API_KEY=your_etherscan_api_key
+# Backend
+DATABASE_URL=postgresql://user:pass@localhost:5432/hammy
+HOT_WALLET_PRIVATE_KEY=your_hot_wallet_key
+ASSET_POOL_ADDRESS=0x...
 ```
 
 ## Deployment Process
@@ -51,29 +49,32 @@ ETHERSCAN_API_KEY=your_etherscan_api_key
 npm run deploy:sepolia
 
 # This will deploy:
-# - RandomnessProvider
+# - RandomnessProvider (VRF 2.5 Direct Funding)
 # - VendingMachine
 # - RaffleManager  
 # - SponsorAuction
 ```
 
+**Note**: The deployment script automatically funds RandomnessProvider with 0.5 ETH for VRF requests.
+
 ### 2. Post-Deployment Configuration
 
 After deployment, you need to:
 
-1. **Add RandomnessProvider as VRF Consumer**
-   - Go to [vrf.chain.link](https://vrf.chain.link)
-   - Select your subscription
-   - Click "Add Consumer"
-   - Enter RandomnessProvider address
-
-2. **Fund VRF Subscription**
-   - Ensure subscription has enough LINK tokens
-   - Recommended: 10+ LINK for testing
-
-3. **Verify Contracts**
+1. **Verify Contracts**
    ```bash
    npm run verify:sepolia
+   ```
+
+2. **Monitor RandomnessProvider ETH Balance**
+   - Check balance regularly
+   - Top up when running low (< 0.1 ETH)
+   - No LINK tokens or subscriptions needed!
+
+3. **Top Up When Needed**
+   ```bash
+   # Send ETH directly to RandomnessProvider
+   cast send $RANDOMNESS_PROVIDER_ADDRESS --value 0.5ether
    ```
 
 ### 3. Testing on Testnet
@@ -138,10 +139,11 @@ npx hardhat test test/VendingMachine.test.js
 **Symptom**: Randomness not fulfilled, purchases stuck
 
 **Solutions**:
-1. Check VRF subscription has LINK tokens
-2. Verify RandomnessProvider is added as consumer
+1. Check RandomnessProvider has enough ETH balance
+2. Top up with ETH: `cast send $ADDRESS --value 0.5ether`
 3. Check callback gas limit is sufficient (default: 500,000)
-4. Review Chainlink VRF job status
+4. Verify correct VRF Coordinator address for your network
+5. Review Chainlink VRF job status
 
 ### Insufficient Gas
 
@@ -167,8 +169,8 @@ npx hardhat test test/VendingMachine.test.js
 
 - **Chain ID**: 11155111
 - **RPC**: https://sepolia.infura.io/v3/YOUR_KEY
-- **VRF Coordinator**: 0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625
-- **Key Hash**: 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c
+- **VRF Coordinator (2.5)**: 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B
+- **Key Hash (500 gwei)**: 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae
 - **Block Explorer**: https://sepolia.etherscan.io
 
 ### Ethereum Mainnet
@@ -176,13 +178,14 @@ npx hardhat test test/VendingMachine.test.js
 - **Chain ID**: 1
 - **RPC**: https://mainnet.infura.io/v3/YOUR_KEY
 - **USDC**: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
-- **VRF Coordinator**: 0x271682DEB8C4E0901D1a1550aD2e64D568E69909
-- **Key Hash**: Varies by gas lane
+- **VRF Coordinator (2.5)**: 0xD7f86b4b8Cae7D942340FF628F82735b7a20893a
+- **Key Hash (500 gwei)**: 0x8077df514608a09f83e4e8d300645594e5d7234665448ba83f51a50f842bd3d9
 - **Block Explorer**: https://etherscan.io
 
 ## Additional Resources
 
-- [Chainlink VRF Docs](https://docs.chain.link/vrf/v2/introduction)
+- [Chainlink VRF 2.5 Docs](https://docs.chain.link/vrf/v2-5/overview)
+- [VRF Direct Funding Guide](../docs/VRF_DIRECT_FUNDING.md)
 - [Hardhat Documentation](https://hardhat.org/docs)
 - [OpenZeppelin Contracts](https://docs.openzeppelin.com/contracts)
 - [Full Project Documentation](../docs/CONTRACTS.md)

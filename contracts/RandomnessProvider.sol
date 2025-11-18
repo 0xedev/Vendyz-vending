@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/vrf/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title RandomnessProvider
- * @notice Chainlink VRF integration for provably fair randomness
+ * @notice Chainlink VRF 2.5 Direct Funding integration for provably fair randomness
  * @dev Provides random numbers to VendingMachine and RaffleManager contracts
+ * Uses direct funding method - pays per request in native token
  */
-contract RandomnessProvider is VRFConsumerBaseV2, Ownable {
+contract RandomnessProvider is VRFConsumerBaseV2Plus, Ownable {
     
     // Chainlink VRF variables
-    VRFCoordinatorV2Interface public immutable COORDINATOR;
-    uint64 public subscriptionId;
     bytes32 public keyHash;
     uint32 public callbackGasLimit = 500000;
     uint16 public requestConfirmations = 3;
+    uint32 public numWords = 1;
     
     // State variables
     mapping(uint256 => address) public requestToContract; // requestId => requesting contract
@@ -36,61 +36,66 @@ contract RandomnessProvider is VRFConsumerBaseV2, Ownable {
     event ContractAuthorized(address indexed contractAddress);
     event ContractRevoked(address indexed contractAddress);
     event ConfigUpdated(
-        uint64 subscriptionId,
         bytes32 keyHash,
         uint32 callbackGasLimit,
         uint16 requestConfirmations
     );
+    event NativeFundsDeposited(address indexed sender, uint256 amount);
+    event NativeFundsWithdrawn(address indexed owner, uint256 amount);
 
     // Errors
     error Unauthorized();
     error InvalidAddress();
     error InvalidConfig();
+    error InsufficientBalance();
 
     /**
      * @notice Constructor
      * @param _vrfCoordinator Chainlink VRF Coordinator address
-     * @param _subscriptionId Chainlink VRF subscription ID
      * @param _keyHash Chainlink VRF key hash (gas lane)
      */
     constructor(
         address _vrfCoordinator,
-        uint64 _subscriptionId,
         bytes32 _keyHash
-    ) VRFConsumerBaseV2(_vrfCoordinator) {
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
         if (_vrfCoordinator == address(0)) revert InvalidAddress();
         if (_keyHash == bytes32(0)) revert InvalidConfig();
 
-        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
-        subscriptionId = _subscriptionId;
         keyHash = _keyHash;
     }
 
     /**
-     * @notice Request random words from Chainlink VRF
-     * @param numWords Number of random words to request
+     * @notice Request random words from Chainlink VRF using direct funding
+     * @param _numWords Number of random words to request
      * @return requestId The request ID
      */
-    function requestRandomWords(uint32 numWords) 
+    function requestRandomWords(uint32 _numWords) 
         external 
         returns (uint256 requestId) 
     {
         if (!authorizedContracts[msg.sender]) revert Unauthorized();
-        if (numWords == 0 || numWords > 500) revert InvalidConfig();
+        if (_numWords == 0 || _numWords > 500) revert InvalidConfig();
 
-        // Request randomness from VRF Coordinator
-        requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            numWords
+        // Request randomness from VRF Coordinator with direct funding (native payment)
+        requestId = s_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: keyHash,
+                subId: 0, // 0 for direct funding
+                requestConfirmations: requestConfirmations,
+                callbackGasLimit: callbackGasLimit,
+                numWords: _numWords,
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({
+                        nativePayment: true // Pay in native token (ETH)
+                    })
+                )
+            })
         );
 
         // Store requesting contract
         requestToContract[requestId] = msg.sender;
 
-        emit RandomnessRequested(requestId, msg.sender, numWords);
+        emit RandomnessRequested(requestId, msg.sender, _numWords);
 
         return requestId;
     }
@@ -165,13 +170,11 @@ contract RandomnessProvider is VRFConsumerBaseV2, Ownable {
 
     /**
      * @notice Update VRF configuration
-     * @param _subscriptionId New subscription ID
      * @param _keyHash New key hash
      * @param _callbackGasLimit New callback gas limit
      * @param _requestConfirmations New request confirmations
      */
     function updateConfig(
-        uint64 _subscriptionId,
         bytes32 _keyHash,
         uint32 _callbackGasLimit,
         uint16 _requestConfirmations
@@ -180,17 +183,51 @@ contract RandomnessProvider is VRFConsumerBaseV2, Ownable {
         if (_callbackGasLimit == 0) revert InvalidConfig();
         if (_requestConfirmations == 0) revert InvalidConfig();
 
-        subscriptionId = _subscriptionId;
         keyHash = _keyHash;
         callbackGasLimit = _callbackGasLimit;
         requestConfirmations = _requestConfirmations;
 
         emit ConfigUpdated(
-            _subscriptionId,
             _keyHash,
             _callbackGasLimit,
             _requestConfirmations
         );
+    }
+
+    /**
+     * @notice Deposit native tokens (ETH) to pay for VRF requests
+     * @dev Contract must have ETH balance to pay for randomness requests
+     */
+    function depositNativeFunds() external payable {
+        emit NativeFundsDeposited(msg.sender, msg.value);
+    }
+
+    /**
+     * @notice Withdraw native tokens from contract
+     * @param amount Amount to withdraw
+     */
+    function withdrawNativeFunds(uint256 amount) external onlyOwner {
+        if (address(this).balance < amount) revert InsufficientBalance();
+        
+        (bool success, ) = payable(owner()).call{value: amount}("");
+        require(success, "Transfer failed");
+        
+        emit NativeFundsWithdrawn(owner(), amount);
+    }
+
+    /**
+     * @notice Get contract's native token balance
+     * @return Balance in wei
+     */
+    function getNativeBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+
+    /**
+     * @notice Receive function to accept native token deposits
+     */
+    receive() external payable {
+        emit NativeFundsDeposited(msg.sender, msg.value);
     }
 
     /**

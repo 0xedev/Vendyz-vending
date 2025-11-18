@@ -11,27 +11,36 @@ async function main() {
   // Contract addresses (update these for your network)
   const USDC_ADDRESS = process.env.USDC_ADDRESS || "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // Mainnet USDC
   const TREASURY_ADDRESS = process.env.TREASURY_ADDRESS || deployer.address;
-  const VRF_COORDINATOR = process.env.CHAINLINK_VRF_COORDINATOR || "0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625"; // Sepolia
-  const SUBSCRIPTION_ID = process.env.CHAINLINK_SUBSCRIPTION_ID || 0;
-  const KEY_HASH = process.env.CHAINLINK_KEY_HASH || "0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c"; // Sepolia
+  const VRF_COORDINATOR = process.env.CHAINLINK_VRF_COORDINATOR || "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B"; // Sepolia VRF 2.5
+  const KEY_HASH = process.env.CHAINLINK_KEY_HASH || "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae"; // Sepolia 500 gwei
+  const INITIAL_VRF_FUNDING = process.env.INITIAL_VRF_FUNDING || hre.ethers.parseEther("0.5"); // 0.5 ETH for VRF
 
   console.log("\nDeployment Configuration:");
   console.log("- USDC Address:", USDC_ADDRESS);
   console.log("- Treasury Address:", TREASURY_ADDRESS);
   console.log("- VRF Coordinator:", VRF_COORDINATOR);
-  console.log("- Subscription ID:", SUBSCRIPTION_ID);
+  console.log("- Key Hash:", KEY_HASH);
+  console.log("- Initial VRF Funding:", hre.ethers.formatEther(INITIAL_VRF_FUNDING), "ETH");
 
-  // Deploy RandomnessProvider
-  console.log("\n1. Deploying RandomnessProvider...");
+  // Deploy RandomnessProvider with direct funding
+  console.log("\n1. Deploying RandomnessProvider (VRF 2.5 Direct Funding)...");
   const RandomnessProvider = await hre.ethers.getContractFactory("RandomnessProvider");
   const randomnessProvider = await RandomnessProvider.deploy(
     VRF_COORDINATOR,
-    SUBSCRIPTION_ID,
     KEY_HASH
   );
   await randomnessProvider.waitForDeployment();
   const randomnessProviderAddress = await randomnessProvider.getAddress();
   console.log("✅ RandomnessProvider deployed to:", randomnessProviderAddress);
+
+  // Fund RandomnessProvider with ETH for VRF requests
+  console.log("\n2. Funding RandomnessProvider with ETH for VRF requests...");
+  const fundTx = await deployer.sendTransaction({
+    to: randomnessProviderAddress,
+    value: INITIAL_VRF_FUNDING
+  });
+  await fundTx.wait();
+  console.log("✅ Funded with", hre.ethers.formatEther(INITIAL_VRF_FUNDING), "ETH");
 
   // Deploy VendingMachine
   console.log("\n2. Deploying VendingMachine...");
@@ -69,12 +78,16 @@ async function main() {
   console.log("✅ SponsorAuction deployed to:", sponsorAuctionAddress);
 
   // Authorize contracts in RandomnessProvider
-  console.log("\n5. Authorizing contracts in RandomnessProvider...");
+  console.log("\n6. Authorizing contracts in RandomnessProvider...");
   await randomnessProvider.authorizeContract(vendingMachineAddress);
   console.log("✅ VendingMachine authorized");
   
   await randomnessProvider.authorizeContract(raffleManagerAddress);
   console.log("✅ RaffleManager authorized");
+
+  // Check VRF balance
+  const vrfBalance = await hre.ethers.provider.getBalance(randomnessProviderAddress);
+  console.log("\n7. RandomnessProvider ETH balance:", hre.ethers.formatEther(vrfBalance), "ETH");
 
   // Display deployment summary
   console.log("\n" + "=".repeat(60));
@@ -92,14 +105,16 @@ async function main() {
   console.log("USDC:              ", USDC_ADDRESS);
   console.log("Treasury:          ", TREASURY_ADDRESS);
   console.log("VRF Coordinator:   ", VRF_COORDINATOR);
+  console.log("VRF Funding:       ", hre.ethers.formatEther(vrfBalance), "ETH");
 
   console.log("\nNext Steps:");
   console.log("-------------------");
-  console.log("1. Add RandomnessProvider as a consumer in Chainlink VRF subscription");
-  console.log("2. Fund the VRF subscription with LINK tokens");
-  console.log("3. Verify contracts on Etherscan (run verify script)");
+  console.log("1. Verify contracts on Etherscan (run verify script)");
+  console.log("2. Monitor RandomnessProvider ETH balance for VRF payments");
+  console.log("3. Top up RandomnessProvider with more ETH as needed");
   console.log("4. Update frontend environment variables with contract addresses");
   console.log("5. Test contracts on testnet before mainnet deployment");
+  console.log("\nNote: VRF 2.5 uses direct funding - no subscription needed!");
 
   // Save deployment addresses
   const fs = require("fs");
@@ -117,7 +132,8 @@ async function main() {
       usdc: USDC_ADDRESS,
       treasury: TREASURY_ADDRESS,
       vrfCoordinator: VRF_COORDINATOR,
-      subscriptionId: SUBSCRIPTION_ID,
+      keyHash: KEY_HASH,
+      initialVrfFunding: INITIAL_VRF_FUNDING.toString(),
     },
   };
 
