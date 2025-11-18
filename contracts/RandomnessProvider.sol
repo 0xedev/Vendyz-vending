@@ -57,7 +57,7 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus, Ownable {
     constructor(
         address _vrfCoordinator,
         bytes32 _keyHash
-    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) Ownable(msg.sender) {
         if (_vrfCoordinator == address(0)) revert InvalidAddress();
         if (_keyHash == bytes32(0)) revert InvalidConfig();
 

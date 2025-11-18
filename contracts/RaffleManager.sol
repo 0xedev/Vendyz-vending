@@ -88,7 +88,7 @@ contract RaffleManager is Ownable, ReentrancyGuard, Pausable {
         address _usdc,
         address _randomnessProvider,
         address _treasury
-    ) {
+    ) Ownable(msg.sender) {
         if (_usdc == address(0) || _randomnessProvider == address(0) || _treasury == address(0)) {
             revert InvalidAddress();
         }

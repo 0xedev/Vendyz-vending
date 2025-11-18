@@ -89,7 +89,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
      * @param _usdc USDC token address
      * @param _treasury Treasury address for winning bids
      */
-    constructor(address _usdc, address _treasury) {
+    constructor(address _usdc, address _treasury) Ownable(msg.sender) {
         if (_usdc == address(0) || _treasury == address(0)) {
             revert InvalidAddress();
         }
