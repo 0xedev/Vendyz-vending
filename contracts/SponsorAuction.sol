@@ -42,7 +42,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
     Auction public currentAuction;
     mapping(uint256 => Auction) public auctionHistory;
     mapping(uint256 => Bid[]) public auctionBids; // auctionId => bids
-    mapping(address => uint256) public activeBids; // bidder => current bid amount
+    mapping(address => uint256) public userBidAmount; // bidder => current bid amount
     
     address public treasury;
     uint256 public totalAuctions;
@@ -115,7 +115,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
         if (block.timestamp >= currentAuction.endTime) revert AuctionNotActive();
         if (bidAmount < MIN_BID) revert BidTooLow();
 
-        uint256 currentBid = activeBids[msg.sender];
+        uint256 currentBid = userBidAmount[msg.sender];
         
         if (currentBid > 0) {
             // Update existing bid
@@ -148,7 +148,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
             emit BidPlaced(currentAuction.auctionId, msg.sender, tokenAddress, bidAmount);
         }
         
-        activeBids[msg.sender] = bidAmount;
+        userBidAmount[msg.sender] = bidAmount;
     }
 
     /**
@@ -212,7 +212,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
             }
             
             // Clear active bid
-            activeBids[sortedBids[i].bidder] = 0;
+            userBidAmount[sortedBids[i].bidder] = 0;
         }
         
         // Update auction
@@ -344,7 +344,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
      * @return Current bid amount
      */
     function getUserBid(address user) external view returns (uint256) {
-        return activeBids[user];
+        return userBidAmount[user];
     }
 
     /**

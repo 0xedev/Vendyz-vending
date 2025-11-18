@@ -3,15 +3,15 @@ pragma solidity ^0.8.20;
 
 import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title RandomnessProvider
  * @notice Chainlink VRF 2.5 Direct Funding integration for provably fair randomness
  * @dev Provides random numbers to VendingMachine and RaffleManager contracts
  * Uses direct funding method - pays per request in native token
+ * Note: Inherits ownership from VRFConsumerBaseV2Plus (Chainlink's ConfirmedOwner)
  */
-contract RandomnessProvider is VRFConsumerBaseV2Plus, Ownable {
+contract RandomnessProvider is VRFConsumerBaseV2Plus {
     
     // Chainlink VRF variables
     bytes32 public keyHash;
@@ -57,7 +57,7 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus, Ownable {
     constructor(
         address _vrfCoordinator,
         bytes32 _keyHash
-    ) VRFConsumerBaseV2Plus(_vrfCoordinator) Ownable(msg.sender) {
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
         if (_vrfCoordinator == address(0)) revert InvalidAddress();
         if (_keyHash == bytes32(0)) revert InvalidConfig();
 
@@ -107,7 +107,7 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus, Ownable {
      */
     function fulfillRandomWords(
         uint256 requestId,
-        uint256[] memory randomWords
+        uint256[] calldata randomWords
     ) internal override {
         address requester = requestToContract[requestId];
         
