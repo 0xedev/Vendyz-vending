@@ -43,7 +43,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
     uint256 public totalRevenue;
     uint256 public totalPurchases;
     
-    uint8 public constant MAX_TIERS = 3;
+    uint8 public constant MAX_TIERS = 4;
     uint256 public constant HOUSE_EDGE_PERCENT = 10; // 10% house edge
 
     // Events
@@ -102,20 +102,27 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
 
         // Initialize default tiers (prices in USDC with 6 decimals)
         tiers[1] = Tier({
+            price: 5 * 10**6,       // 5 USDC
+            minValue: 1 * 10**6,    // 1 USDC
+            maxValue: 10 * 10**6,   // 10 USDC
+            active: true
+        });
+
+        tiers[2] = Tier({
             price: 20 * 10**6,      // 20 USDC
             minValue: 5 * 10**6,    // 5 USDC
             maxValue: 30 * 10**6,   // 30 USDC
             active: true
         });
 
-        tiers[2] = Tier({
+        tiers[3] = Tier({
             price: 50 * 10**6,      // 50 USDC
             minValue: 5 * 10**6,    // 5 USDC
             maxValue: 75 * 10**6,   // 75 USDC
             active: true
         });
 
-        tiers[3] = Tier({
+        tiers[4] = Tier({
             price: 100 * 10**6,     // 100 USDC
             minValue: 10 * 10**6,   // 10 USDC
             maxValue: 150 * 10**6,  // 150 USDC
@@ -125,7 +132,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
 
     /**
      * @notice Purchase a vending machine tier
-     * @param tier The tier to purchase (1, 2, or 3)
+     * @param tier The tier to purchase (1, 2, 3, or 4)
      */
     function purchase(uint8 tier) 
         external 
@@ -230,7 +237,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
 
     /**
      * @notice Get tier information
-     * @param tier Tier number (1, 2, or 3)
+     * @param tier Tier number (1, 2, 3, or 4)
      * @return Tier details
      */
     function getTier(uint8 tier) external view returns (Tier memory) {
