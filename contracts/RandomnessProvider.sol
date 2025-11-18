@@ -102,7 +102,7 @@ contract RandomnessProvider is VRFV2PlusWrapperConsumerBase, ConfirmedOwner  {
      */
     function fulfillRandomWords(
         uint256 requestId,
-        uint256[] calldata randomWords
+        uint256[] memory randomWords
     ) internal override {
         address requester = requestToContract[requestId];
         
