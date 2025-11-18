@@ -39,8 +39,7 @@ contract RaffleManager is Ownable, ReentrancyGuard, Pausable {
     
     uint256 public constant TICKET_PRICE = 1 * 10**6; // 1 USDC
     uint256 public constant MAX_TICKETS_PER_USER = 5;
-    uint256 public constant HOUSE_FEE_PERCENT = 10;
-    uint256 public constant HOUSE_FLAT_FEE = 10 * 10**6; // 10 USDC
+    uint256 public constant HOUSE_FEE_PERCENT = 10; // 10% house edge
     
     Raffle public currentRaffle;
     mapping(uint256 => Raffle) public raffleHistory;
@@ -195,17 +194,19 @@ contract RaffleManager is Ownable, ReentrancyGuard, Pausable {
         uint256 winningTicket = randomWords[0] % raffle.ticketsSold;
         address winner = raffleTicketHolders[raffleId][winningTicket];
 
-        // Calculate prize pool (90% of total - house flat fee)
+        // Calculate prize pool: 90% goes to winner (10% house fee)
         uint256 houseFee = (raffle.prizePool * HOUSE_FEE_PERCENT) / 100;
-        uint256 prizePool = raffle.prizePool - houseFee - HOUSE_FLAT_FEE;
+        uint256 prizePool = raffle.prizePool - houseFee;
 
         // Update raffle
         raffle.winner = winner;
         raffle.prizePool = prizePool;
 
-        // Transfer fees to treasury
-        uint256 totalFees = houseFee + HOUSE_FLAT_FEE;
-        usdc.transfer(treasury, totalFees);
+        // Transfer prize to winner
+        require(usdc.transfer(winner, prizePool), "Prize transfer failed");
+
+        // Transfer house fee to treasury
+        require(usdc.transfer(treasury, houseFee), "Fee transfer failed");
 
         emit WinnerSelected(raffleId, winner, winningTicket, prizePool);
 

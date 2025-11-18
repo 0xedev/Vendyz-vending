@@ -150,7 +150,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
         if (!success) revert InvalidPayment();
 
         // Request randomness
-        requestId = randomnessProvider.requestRandomWords(5); // Request 5 random words
+        requestId = randomnessProvider.requestRandomWords(1); // Request 1 random word
 
         // Store purchase info
         purchases[requestId] = Purchase({
@@ -217,7 +217,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
         uint256 maxValue,
         uint256 randomSeed
     ) internal pure returns (uint256) {
-        uint256 range = maxValue - minValue;
+        uint256 range = maxValue - minValue + 1;
         uint256 randomValue = randomSeed % range;
         return minValue + randomValue;
     }

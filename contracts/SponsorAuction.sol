@@ -127,8 +127,8 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
             bool success = usdc.transferFrom(msg.sender, address(this), additionalAmount);
             if (!success) revert TransferFailed();
             
-            // Update bid in array
-            _updateBidAmount(msg.sender, bidAmount);
+            // Update bid in array (including token address)
+            _updateBid(msg.sender, tokenAddress, bidAmount);
             
             emit BidUpdated(currentAuction.auctionId, msg.sender, currentBid, bidAmount);
         } else {
@@ -152,14 +152,16 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
     }
 
     /**
-     * @notice Update bid amount in the bids array
+     * @notice Update bid in the bids array
      * @param bidder Address of bidder
+     * @param tokenAddress New token address
      * @param newAmount New bid amount
      */
-    function _updateBidAmount(address bidder, uint256 newAmount) internal {
+    function _updateBid(address bidder, address tokenAddress, uint256 newAmount) internal {
         Bid[] storage bids = auctionBids[currentAuction.auctionId];
         for (uint256 i = 0; i < bids.length; i++) {
             if (bids[i].bidder == bidder && bids[i].active) {
+                bids[i].tokenAddress = tokenAddress;
                 bids[i].amount = newAmount;
                 bids[i].timestamp = block.timestamp;
                 return;

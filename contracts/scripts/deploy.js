@@ -11,23 +11,20 @@ async function main() {
   // Contract addresses (update these for your network)
   const USDC_ADDRESS = process.env.USDC_ADDRESS || "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // Mainnet USDC
   const TREASURY_ADDRESS = process.env.TREASURY_ADDRESS || deployer.address;
-  const VRF_COORDINATOR = process.env.CHAINLINK_VRF_COORDINATOR || "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B"; // Sepolia VRF 2.5
-  const KEY_HASH = process.env.CHAINLINK_KEY_HASH || "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae"; // Sepolia 500 gwei
+  const VRF_WRAPPER = process.env.CHAINLINK_VRF_WRAPPER || "0x195f15F2d49d693cE265b4fB0fdDbE15b1850Cc1"; // Sepolia VRF 2.5 Wrapper
   const INITIAL_VRF_FUNDING = process.env.INITIAL_VRF_FUNDING || hre.ethers.parseEther("0.5"); // 0.5 ETH for VRF
 
   console.log("\nDeployment Configuration:");
   console.log("- USDC Address:", USDC_ADDRESS);
   console.log("- Treasury Address:", TREASURY_ADDRESS);
-  console.log("- VRF Coordinator:", VRF_COORDINATOR);
-  console.log("- Key Hash:", KEY_HASH);
+  console.log("- VRF Wrapper:", VRF_WRAPPER);
   console.log("- Initial VRF Funding:", hre.ethers.formatEther(INITIAL_VRF_FUNDING), "ETH");
 
   // Deploy RandomnessProvider with direct funding
   console.log("\n1. Deploying RandomnessProvider (VRF 2.5 Direct Funding)...");
   const RandomnessProvider = await hre.ethers.getContractFactory("RandomnessProvider");
   const randomnessProvider = await RandomnessProvider.deploy(
-    VRF_COORDINATOR,
-    KEY_HASH
+    VRF_WRAPPER
   );
   await randomnessProvider.waitForDeployment();
   const randomnessProviderAddress = await randomnessProvider.getAddress();

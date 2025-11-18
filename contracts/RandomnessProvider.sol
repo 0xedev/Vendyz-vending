@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import "@chainlink/contracts/src/v0.8/vrf/dev/VRFV2PlusWrapperConsumerBase.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 
 /**
  * @title RandomnessProvider
  * @notice Chainlink VRF 2.5 Direct Funding integration for provably fair randomness
  * @dev Provides random numbers to VendingMachine and RaffleManager contracts
  * Uses direct funding method - pays per request in native token
- * Note: Inherits ownership from VRFConsumerBaseV2Plus (Chainlink's ConfirmedOwner)
+ * Note: Inherits ownership from ConfirmedOwner
  */
-contract RandomnessProvider is VRFConsumerBaseV2Plus {
+contract RandomnessProvider is VRFV2PlusWrapperConsumerBase, ConfirmedOwner  {
     
     // Chainlink VRF variables
-    bytes32 public keyHash;
     uint32 public callbackGasLimit = 500000;
     uint16 public requestConfirmations = 3;
-    uint32 public numWords = 1;
     
     // State variables
     mapping(uint256 => address) public requestToContract; // requestId => requesting contract
@@ -36,7 +35,6 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus {
     event ContractAuthorized(address indexed contractAddress);
     event ContractRevoked(address indexed contractAddress);
     event ConfigUpdated(
-        bytes32 keyHash,
         uint32 callbackGasLimit,
         uint16 requestConfirmations
     );
@@ -51,17 +49,15 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus {
 
     /**
      * @notice Constructor
-     * @param _vrfCoordinator Chainlink VRF Coordinator address
-     * @param _keyHash Chainlink VRF key hash (gas lane)
+     * @param _wrapperAddress Chainlink VRF Wrapper address
      */
     constructor(
-        address _vrfCoordinator,
-        bytes32 _keyHash
-    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
-        if (_vrfCoordinator == address(0)) revert InvalidAddress();
-        if (_keyHash == bytes32(0)) revert InvalidConfig();
-
-        keyHash = _keyHash;
+        address _wrapperAddress
+    ) 
+        ConfirmedOwner(msg.sender)
+        VRFV2PlusWrapperConsumerBase(_wrapperAddress) 
+    {
+        if (_wrapperAddress == address(0)) revert InvalidAddress();
     }
 
     /**
@@ -76,20 +72,19 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus {
         if (!authorizedContracts[msg.sender]) revert Unauthorized();
         if (_numWords == 0 || _numWords > 500) revert InvalidConfig();
 
-        // Request randomness from VRF Coordinator with direct funding (native payment)
-        requestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash: keyHash,
-                subId: 0, // 0 for direct funding
-                requestConfirmations: requestConfirmations,
-                callbackGasLimit: callbackGasLimit,
-                numWords: _numWords,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({
-                        nativePayment: true // Pay in native token (ETH)
-                    })
-                )
+        // Build extraArgs with native payment enabled
+        bytes memory extraArgs = VRFV2PlusClient._argsToBytes(
+            VRFV2PlusClient.ExtraArgsV1({
+                nativePayment: true // Pay in native token (ETH)
             })
+        );
+
+        // Request randomness using wrapper (direct funding with native payment)
+        (requestId, ) = requestRandomnessPayInNative(
+            callbackGasLimit,
+            requestConfirmations,
+            _numWords,
+            extraArgs
         );
 
         // Store requesting contract
@@ -170,25 +165,20 @@ contract RandomnessProvider is VRFConsumerBaseV2Plus {
 
     /**
      * @notice Update VRF configuration
-     * @param _keyHash New key hash
      * @param _callbackGasLimit New callback gas limit
      * @param _requestConfirmations New request confirmations
      */
     function updateConfig(
-        bytes32 _keyHash,
         uint32 _callbackGasLimit,
         uint16 _requestConfirmations
     ) external onlyOwner {
-        if (_keyHash == bytes32(0)) revert InvalidConfig();
         if (_callbackGasLimit == 0) revert InvalidConfig();
         if (_requestConfirmations == 0) revert InvalidConfig();
 
-        keyHash = _keyHash;
         callbackGasLimit = _callbackGasLimit;
         requestConfirmations = _requestConfirmations;
 
         emit ConfigUpdated(
-            _keyHash,
             _callbackGasLimit,
             _requestConfirmations
         );
