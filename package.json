@@ -1,0 +1,52 @@
+{
+  "name": "vendyz-vending",
+  "version": "0.1.0",
+  "description": "Anonymous wallet vending machine with gamified randomness",
+  "private": true,
+  "workspaces": [
+    "contracts",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "contracts:compile": "cd contracts && npx hardhat compile",
+    "contracts:test": "cd contracts && npx hardhat test",
+    "contracts:deploy:testnet": "cd contracts && npx hardhat run scripts/deploy.js --network sepolia",
+    "contracts:deploy:mainnet": "cd contracts && npx hardhat run scripts/deploy.js --network mainnet",
+    "backend:dev": "cd backend && npm run dev",
+    "backend:build": "cd backend && npm run build",
+    "backend:start": "cd backend && npm start",
+    "backend:test": "cd backend && npm test",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:start": "cd frontend && npm start",
+    "frontend:test": "cd frontend && npm test",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "test": "npm run contracts:test && npm run backend:test && npm run frontend:test",
+    "test:coverage": "npm run contracts:test -- --coverage && npm run backend:test -- --coverage",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md,sol}\""
+  },
+  "keywords": [
+    "blockchain",
+    "ethereum",
+    "vending-machine",
+    "gambling",
+    "privacy",
+    "anonymous",
+    "defi",
+    "nft"
+  ],
+  "author": "Hammy Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1",
+    "prettier-plugin-solidity": "^1.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
