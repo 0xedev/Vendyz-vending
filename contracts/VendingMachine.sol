@@ -38,6 +38,10 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
     mapping(uint8 => Tier) public tiers;
     mapping(uint256 => Purchase) public purchases; // requestId => Purchase
     mapping(address => uint256) public userPurchaseCount;
+    mapping(uint256 => uint256) public vrfRequestTimestamp; // requestId => timestamp
+    
+    uint256[] public allPurchaseIds; // All request IDs for history
+    mapping(address => uint256[]) public userPurchaseIds; // user => request IDs
     
     address public treasury;
     uint256 public totalRevenue;
@@ -45,6 +49,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
     
     uint8 public constant MAX_TIERS = 4;
     uint256 public constant HOUSE_EDGE_PERCENT = 10; // 10% house edge
+    uint256 public constant VRF_CALLBACK_TIMEOUT = 1 hours; // Time before emergency intervention
 
     // Events
     event PurchaseInitiated(
@@ -71,9 +76,12 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
     
     event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
     event RevenueWithdrawn(address indexed to, uint256 amount);
+    event EmergencyFulfillment(uint256 indexed requestId, uint256 walletValue);
+    event PurchaseRefunded(uint256 indexed requestId, address indexed buyer, uint256 amount);
 
     // Errors
     error InvalidTier();
+    error VRFTimeoutNotReached();
     error TierNotActive();
     error InvalidPayment();
     error PurchaseNotFound();
@@ -145,8 +153,8 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
         Tier memory tierInfo = tiers[tier];
         if (!tierInfo.active) revert TierNotActive();
 
-        // Transfer USDC from buyer
-        bool success = usdc.transferFrom(msg.sender, treasury, tierInfo.price);
+        // Transfer USDC from buyer to contract (not treasury)
+        bool success = usdc.transferFrom(msg.sender, address(this), tierInfo.price);
         if (!success) revert InvalidPayment();
 
         // Request randomness
@@ -161,6 +169,13 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
             fulfilled: false,
             randomWords: new uint256[](0)
         });
+
+        // Track VRF request timestamp
+        vrfRequestTimestamp[requestId] = block.timestamp;
+
+        // Track purchase history
+        allPurchaseIds.push(requestId);
+        userPurchaseIds[msg.sender].push(requestId);
 
         // Update stats
         userPurchaseCount[msg.sender]++;
@@ -254,6 +269,71 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
         return userPurchaseCount[user];
     }
 
+    /**
+     * @notice Get all purchase IDs for a user
+     * @param user User address
+     * @return Array of request IDs
+     */
+    function getUserPurchaseIds(address user) external view returns (uint256[] memory) {
+        return userPurchaseIds[user];
+    }
+
+    /**
+     * @notice Get all purchase IDs
+     * @return Array of all request IDs
+     */
+    function getAllPurchaseIds() external view returns (uint256[] memory) {
+        return allPurchaseIds;
+    }
+
+    /**
+     * @notice Get multiple purchases at once
+     * @param requestIds Array of request IDs
+     * @return Array of purchases
+     */
+    function getBatchPurchases(uint256[] calldata requestIds) 
+        external 
+        view 
+        returns (Purchase[] memory) 
+    {
+        Purchase[] memory result = new Purchase[](requestIds.length);
+        for (uint256 i = 0; i < requestIds.length; i++) {
+            result[i] = purchases[requestIds[i]];
+        }
+        return result;
+    }
+
+    /**
+     * @notice Get paginated purchase history
+     * @param offset Starting index
+     * @param limit Number of items to return
+     * @return Array of purchases
+     */
+    function getPurchaseHistory(uint256 offset, uint256 limit) 
+        external 
+        view 
+        returns (Purchase[] memory) 
+    {
+        uint256 total = allPurchaseIds.length;
+        if (offset >= total) {
+            return new Purchase[](0);
+        }
+        
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+        
+        uint256 resultLength = end - offset;
+        Purchase[] memory result = new Purchase[](resultLength);
+        
+        for (uint256 i = 0; i < resultLength; i++) {
+            result[i] = purchases[allPurchaseIds[offset + i]];
+        }
+        
+        return result;
+    }
+
     // Admin functions
 
     /**
@@ -303,6 +383,98 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
     function setRandomnessProvider(address newProvider) external onlyOwner {
         if (newProvider == address(0)) revert InvalidAddress();
         randomnessProvider = IRandomnessProvider(newProvider);
+    }
+
+    /**
+     * @notice Emergency: Manually fulfill purchase if VRF fails
+     * @param requestId Request ID that timed out
+     * @param randomSeed Manual random seed
+     */
+    function emergencyFulfillPurchase(uint256 requestId, uint256 randomSeed) 
+        external 
+        onlyOwner 
+    {
+        require(vrfRequestTimestamp[requestId] != 0, "Invalid request ID");
+        if (block.timestamp < vrfRequestTimestamp[requestId] + VRF_CALLBACK_TIMEOUT) {
+            revert VRFTimeoutNotReached();
+        }
+
+        Purchase storage purchaseInfo = purchases[requestId];
+        if (purchaseInfo.buyer == address(0)) revert PurchaseNotFound();
+        if (purchaseInfo.fulfilled) revert AlreadyFulfilled();
+
+        // Mark as fulfilled with manual seed
+        purchaseInfo.fulfilled = true;
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = randomSeed;
+        purchaseInfo.randomWords = randomWords;
+
+        // Calculate wallet value
+        Tier memory tierInfo = tiers[purchaseInfo.tier];
+        uint256 estimatedValue = _calculateWalletValue(
+            tierInfo.minValue,
+            tierInfo.maxValue,
+            randomSeed
+        );
+
+        emit EmergencyFulfillment(requestId, estimatedValue);
+        emit WalletReady(
+            requestId,
+            purchaseInfo.buyer,
+            purchaseInfo.tier,
+            estimatedValue
+        );
+    }
+
+    /**
+     * @notice Emergency: Refund purchase if VRF fails and owner decides to refund
+     * @param requestId Request ID to refund
+     */
+    function emergencyRefundPurchase(uint256 requestId) 
+        external 
+        onlyOwner 
+    {
+        require(vrfRequestTimestamp[requestId] != 0, "Invalid request ID");
+        if (block.timestamp < vrfRequestTimestamp[requestId] + VRF_CALLBACK_TIMEOUT) {
+            revert VRFTimeoutNotReached();
+        }
+
+        Purchase storage purchaseInfo = purchases[requestId];
+        if (purchaseInfo.buyer == address(0)) revert PurchaseNotFound();
+        if (purchaseInfo.fulfilled) revert AlreadyFulfilled();
+
+        // Mark as fulfilled to prevent re-entry
+        purchaseInfo.fulfilled = true;
+
+        // Refund the buyer from contract balance
+        bool success = usdc.transfer(purchaseInfo.buyer, purchaseInfo.pricePaid);
+        require(success, "Refund failed");
+
+        emit PurchaseRefunded(requestId, purchaseInfo.buyer, purchaseInfo.pricePaid);
+    }
+
+    /**
+     * @notice Withdraw collected revenue to treasury
+     * @param amount Amount of USDC to withdraw
+     */
+    function withdrawRevenue(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert InvalidTierParameters();
+        
+        uint256 balance = usdc.balanceOf(address(this));
+        require(balance >= amount, "Insufficient balance");
+
+        bool success = usdc.transfer(treasury, amount);
+        require(success, "Transfer failed");
+
+        emit RevenueWithdrawn(treasury, amount);
+    }
+
+    /**
+     * @notice Get contract's USDC balance
+     * @return USDC balance
+     */
+    function getUSDCBalance() external view returns (uint256) {
+        return usdc.balanceOf(address(this));
     }
 
     /**

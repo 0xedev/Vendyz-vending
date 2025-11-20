@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 
 /**
  * @title SponsorAuction
- * @notice Manages 30-day recurring auctions for sponsored token placements
+ * @notice Manages 7-day recurring auctions for sponsored token placements
  * @dev Projects bid USDC for guaranteed placement in vending machine wallets
  */
 contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
@@ -35,14 +35,16 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
     // State variables
     IERC20 public immutable usdc;
     
-    uint256 public constant AUCTION_DURATION = 30 days;
+    uint256 public auctionDuration = 7 days; 
     uint256 public constant SPONSOR_SLOTS = 5; // 5 sponsors per cycle
     uint256 public constant MIN_BID = 100 * 10**6; // 100 USDC minimum
+    uint256 public constant MIN_BID_INCREMENT = 5 * 10**6; // 5 USDC
     
     Auction public currentAuction;
     mapping(uint256 => Auction) public auctionHistory;
     mapping(uint256 => Bid[]) public auctionBids; // auctionId => bids
     mapping(address => uint256) public userBidAmount; // bidder => current bid amount
+    mapping(address => Bid[]) public userBidHistory; // Track all bids user ever made
     
     address public treasury;
     uint256 public totalAuctions;
@@ -83,6 +85,8 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
     error TransferFailed();
     error NoBidToUpdate();
     error InvalidBidAmount();
+    error InsufficientIncrease();
+    error BidNotCompetitive();
 
     /**
      * @notice Constructor
@@ -121,6 +125,11 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
             // Update existing bid
             if (bidAmount <= currentBid) revert InvalidBidAmount();
             
+            // NEW CHECK: Must increase by at least 5 USDC
+            if (bidAmount < currentBid + MIN_BID_INCREMENT) {
+                revert InsufficientIncrease();
+            }
+            
             uint256 additionalAmount = bidAmount - currentBid;
             
             // Transfer additional USDC
@@ -132,6 +141,12 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
             
             emit BidUpdated(currentAuction.auctionId, msg.sender, currentBid, bidAmount);
         } else {
+            // For new bids, find highest current bid
+            uint256 highestBid = getHighestCurrentBid();
+            if (highestBid > 0 && bidAmount < highestBid + MIN_BID_INCREMENT) {
+                revert BidNotCompetitive(); // Must beat highest by 5 USDC
+            }
+            
             // New bid
             bool success = usdc.transferFrom(msg.sender, address(this), bidAmount);
             if (!success) revert TransferFailed();
@@ -149,6 +164,13 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
         }
         
         userBidAmount[msg.sender] = bidAmount;
+        userBidHistory[msg.sender].push(Bid({
+            bidder: msg.sender,
+            tokenAddress: tokenAddress,
+            amount: bidAmount,
+            timestamp: block.timestamp,
+            active: true
+        }));
     }
 
     /**
@@ -164,6 +186,20 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
                 bids[i].tokenAddress = tokenAddress;
                 bids[i].amount = newAmount;
                 bids[i].timestamp = block.timestamp;
+                return;
+            }
+        }
+    }
+
+    /**
+     * @notice Mark bid as inactive
+     * @param bidder Address of bidder
+     */
+    function _markBidInactive(address bidder) internal {
+        Bid[] storage bids = auctionBids[currentAuction.auctionId];
+        for (uint256 i = 0; i < bids.length; i++) {
+            if (bids[i].bidder == bidder && bids[i].active) {
+                bids[i].active = false;
                 return;
             }
         }
@@ -204,7 +240,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
                 // Add to active sponsors
                 activeSponsors.push(sortedBids[i].tokenAddress);
                 isSponsor[sortedBids[i].tokenAddress] = true;
-                sponsorEndTime[sortedBids[i].tokenAddress] = block.timestamp + AUCTION_DURATION;
+                sponsorEndTime[sortedBids[i].tokenAddress] = block.timestamp + auctionDuration;
                 
                 emit SponsorAdded(sortedBids[i].tokenAddress, sponsorEndTime[sortedBids[i].tokenAddress]);
             } else {
@@ -213,7 +249,8 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
                 emit BidRefunded(sortedBids[i].bidder, sortedBids[i].amount);
             }
             
-            // Clear active bid
+            // Mark bid as inactive and clear active bid amount
+            _markBidInactive(sortedBids[i].bidder);
             userBidAmount[sortedBids[i].bidder] = 0;
         }
         
@@ -288,7 +325,7 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
         currentAuction = Auction({
             auctionId: totalAuctions,
             startTime: block.timestamp,
-            endTime: block.timestamp + AUCTION_DURATION,
+            endTime: block.timestamp + auctionDuration,
             availableSlots: SPONSOR_SLOTS,
             winners: new address[](0),
             winningBids: new uint256[](0),
@@ -358,6 +395,32 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
             return 0;
         }
         return currentAuction.endTime - block.timestamp;
+    }
+
+    /**
+     * @notice Get highest current active bid amount
+     * @return Highest bid amount in current auction
+     */
+   function getHighestCurrentBid() public view returns (uint256) {
+    Bid[] storage bids = auctionBids[currentAuction.auctionId];
+    uint256 highest = 0;
+    for (uint256 i = 0; i < bids.length; i++) {
+        if (bids[i].active && bids[i].amount > highest) {
+            highest = bids[i].amount;
+        }
+    }
+    return highest;
+}
+
+
+    /**
+     * @notice Update auction duration
+     * @param newDuration New auction duration in seconds
+     */
+    function setAuctionDuration(uint256 newDuration) external onlyOwner {
+        require(newDuration >= 1 days, "Too short");
+        require(newDuration <= 365 days, "Too long");
+        auctionDuration = newDuration;
     }
 
     // Admin functions
@@ -431,4 +494,27 @@ contract SponsorAuction is Ownable, ReentrancyGuard, Pausable {
     function emergencyWithdraw(uint256 amount) external onlyOwner {
         usdc.transfer(treasury, amount);
     }
+
+    /**
+     * @notice Cancel the current auction
+     * @dev Refunds all bids and starts a new auction
+     */
+  function cancelAuction() external onlyOwner {
+    require(!currentAuction.finalized, "Already finalized");
+        
+    Bid[] storage bids = auctionBids[currentAuction.auctionId];
+        
+    // Refund all bids
+    for (uint256 i = 0; i < bids.length; i++) {
+        if (bids[i].active) {
+            bids[i].active = false;
+            userBidAmount[bids[i].bidder] = 0;
+            usdc.transfer(bids[i].bidder, bids[i].amount);
+            emit BidRefunded(bids[i].bidder, bids[i].amount);
+        }
+    }
+        
+    _startNewAuction();
+}
+
 }
