@@ -196,6 +196,7 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
         external 
     {
         require(msg.sender == address(randomnessProvider), "Only randomness provider");
+        require(randomWords.length > 0, "No random words");
         
         Purchase storage purchaseInfo = purchases[requestId];
         if (purchaseInfo.buyer == address(0)) revert PurchaseNotFound();
@@ -211,6 +212,9 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
             tierInfo.maxValue,
             randomWords[0]
         );
+
+        // Clean up timestamp
+        delete vrfRequestTimestamp[requestId];
 
         emit WalletReady(
             requestId,
@@ -417,6 +421,9 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
             randomSeed
         );
 
+        // Clean up timestamp
+        delete vrfRequestTimestamp[requestId];
+
         emit EmergencyFulfillment(requestId, estimatedValue);
         emit WalletReady(
             requestId,
@@ -449,6 +456,9 @@ contract VendingMachine is Ownable, ReentrancyGuard, Pausable {
         // Refund the buyer from contract balance
         bool success = usdc.transfer(purchaseInfo.buyer, purchaseInfo.pricePaid);
         require(success, "Refund failed");
+
+        // Clean up timestamp
+        delete vrfRequestTimestamp[requestId];
 
         emit PurchaseRefunded(requestId, purchaseInfo.buyer, purchaseInfo.pricePaid);
     }
