@@ -10,23 +10,21 @@ A blockchain-based vending machine that dispenses pre-funded anonymous Ethereum 
 
 Fixed-price tiers where users receive random anonymous wallets:
 
-#### Tier 1: 20 USDC
+#### Tier 1: 5 USDC
+
+- **Output Range**: 1-10 USDC worth of assets
+
+#### Tier 2: 20 USDC
 
 - **Output Range**: 5-30 USDC worth of assets
-- **Expected Return**: ~18 USDC (90% of input)
-- **House Edge**: 10%
 
-#### Tier 2: 50 USDC
+#### Tier 3: 50 USDC
 
 - **Output Range**: 5-75 USDC worth of assets
-- **Expected Return**: ~45 USDC (90% of input)
-- **House Edge**: 10%
 
-#### Tier 3: 100 USDC
+#### Tier 4: 100 USDC
 
 - **Output Range**: 10-150 USDC worth of assets
-- **Expected Return**: ~90 USDC (90% of input)
-- **House Edge**: 10%
 
 **Assets Included:**
 

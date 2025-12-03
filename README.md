@@ -323,4 +323,5 @@ Need help?
 **Disclaimer**: Gambling involves risk. Never gamble more than you can afford to lose. This platform is for entertainment purposes. No guarantees are made regarding returns.
 
 Made with 🎰 by the Vendyz team
+
 # Vendyz-vending
