@@ -69,3 +69,4 @@ temp/
 
 # Turbo
 .turbo
+backend/.env.example
